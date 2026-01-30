@@ -81,3 +81,42 @@ app.post("/review", async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log("Server running"));
+
+// Api
+import fetch from "node-fetch"; // add at top if not present
+
+app.get("/import-colleges", async (req, res) => {
+  let page = Number(req.query.page || 1);
+  let limit = 100;
+
+  const apiUrl = `https://colleges-api.onrender.com/colleges?limit=${limit}&page=${page}`;
+
+  try {
+    const response = await fetch(apiUrl);
+    const data = await response.json();
+
+    let added = 0;
+
+    for (let c of data.colleges) {
+      const exists = await College.findOne({ name: c.Name });
+      if (!exists) {
+        await College.create({
+          name: c.Name,
+          city: c.City || "Unknown",
+          state: c.State || "Unknown"
+        });
+        added++;
+      }
+    }
+
+    res.json({
+      message: "Import completed",
+      page: page,
+      collegesAdded: added
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
