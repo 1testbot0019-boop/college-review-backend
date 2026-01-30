@@ -1,33 +1,23 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
-const axios = require("axios"); // Added for the import feature
+const axios = require("axios");
 const app = express();
 
+// Middleware
 app.use(cors());
 app.use(express.json());
 
-// 1. CONNECTION (Uses the variable you set in Render)
+// 1. DATABASE CONNECTION
+// We use process.env.MONGO_URI so your password stays safe in Render's Environment settings.
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ MongoDB Connected"))
-  .catch(err => cconst express = require("express");
-const mongoose = require("mongoose");
-const cors = require("cors");
-const axios = require("axios"); // Added for the import feature
-const app = express();
+  .then(() => console.log("✅ Successfully connected to MongoDB"))
+  .catch(err => console.log("❌ MongoDB Connection Error:", err));
 
-app.use(cors());
-app.use(express.json());
-
-// 1. CONNECTION (Uses the variable you set in Render)
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ MongoDB Connected"))
-  .catch(err => console.log("❌ Connection Error:", err));
-
-// 2. COLLEGE SCHEMA
+// 2. DATA MODELS (SCHEMAS)
 const CollegeSchema = new mongoose.Schema({
   name: String,
-  city: String,
+  city: { type: String, default: "India" },
   website: String,
   totalReviews: { type: Number, default: 0 },
   stars: {
@@ -40,147 +30,93 @@ const CollegeSchema = new mongoose.Schema({
 });
 const College = mongoose.model("College", CollegeSchema);
 
-// 3. REVIEW SCHEMA
 const ReviewSchema = new mongoose.Schema({
   collegeId: String,
   rating: Number,
   course: String,
   year: String,
-  text: String
+  text: String,
+  createdAt: { type: Date, default: Date.now }
 });
 const Review = mongoose.model("Review", ReviewSchema);
 
-// --- ROUTES ---
+// 3. API ROUTES
 
-app.get("/", (req, res) => res.send("College API is Running!"));
+// Home Route
+app.get("/", (req, res) => {
+  res.send("College Review API is Live and Running!");
+});
 
-// Get all colleges
+// Get all colleges from your database
 app.get("/colleges", async (req, res) => {
-  const colleges = await College.find();
-  res.json(colleges);
+  try {
+    const colleges = await College.find();
+    res.json(colleges);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// Add a single college
-app.post("/add-college", async (req, res) => {
-  const college = new College(req.body);
-  await college.save();
-  res.json({ message: "College added" });
+// Get a single college and its reviews
+app.get("/college/:id", async (req, res) => {
+  try {
+    const college = await College.findById(req.params.id);
+    const reviews = await Review.find({ collegeId: req.params.id });
+    res.json({ college, reviews });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// Submit a review
+// Submit a new review
 app.post("/review", async (req, res) => {
-  const { collegeId, rating, course, year, text } = req.body;
-  const review = new Review({ collegeId, rating, course, year, text });
-  await review.save();
+  try {
+    const { collegeId, rating, course, year, text } = req.body;
+    
+    // Save the review
+    const review = new Review({ collegeId, rating, course, year, text });
+    await review.save();
 
-  const college = await College.findById(collegeId);
-  college.totalReviews += 1;
-  const starMap = { 1: "one", 2: "two", 3: "three", 4: "four", 5: "five" };
-  college.stars[starMap[rating]] += 1;
-  await college.save();
-  res.json({ message: "Review added" });
+    // Update college star counts and total reviews
+    const college = await College.findById(collegeId);
+    college.totalReviews += 1;
+    
+    const starKeys = { 1: "one", 2: "two", 3: "three", 4: "four", 5: "five" };
+    college.stars[starKeys[rating]] += 1;
+    
+    await college.save();
+    res.json({ message: "Review added successfully!" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// --- THE "MAGIC" IMPORT ROUTE ---
-// Visit YOUR_URL/import-now in your browser to fill your database!
+// 4. THE AUTO-IMPORT ROUTE
+// Visit https://your-app-name.onrender.com/import-now in your browser to fill your DB.
 app.get("/import-now", async (req, res) => {
   try {
+    // Fetching free college data from a public API
     const response = await axios.get("https://raw.githubusercontent.com/Hipo/university-domains-list/master/world_universities_and_domains.json");
-    const indianColleges = response.data.filter(c => c.country === "India").slice(0, 100); // Takes first 100 for speed
+    const indianColleges = response.data.filter(c => c.country === "India").slice(0, 100);
 
     for (let c of indianColleges) {
-      await College.create({
-        name: c.name,
-        city: "India",
-        website: c.web_pages[0]
-      });
+      // Use findOneAndUpdate to avoid creating duplicates if you run this twice
+      await College.findOneAndUpdate(
+        { name: c.name },
+        { 
+          name: c.name, 
+          city: "India", 
+          website: c.web_pages[0] || "N/A" 
+        },
+        { upsert: true, new: true }
+      );
     }
-    res.send(`Successfully imported ${indianColleges.length} colleges!`);
+    res.send(`🎉 Success! ${indianColleges.length} Indian colleges have been added to your database.`);
   } catch (err) {
-    res.status(500).send("Error: " + err.message);
+    res.status(500).send("Import Error: " + err.message);
   }
 });
 
+// Start Server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Server active"));onsole.log("❌ Connection Error:", err));
-
-// 2. COLLEGE SCHEMA
-const CollegeSchema = new mongoose.Schema({
-  name: String,
-  city: String,
-  website: String,
-  totalReviews: { type: Number, default: 0 },
-  stars: {
-    one: { type: Number, default: 0 },
-    two: { type: Number, default: 0 },
-    three: { type: Number, default: 0 },
-    four: { type: Number, default: 0 },
-    five: { type: Number, default: 0 }
-  }
-});
-const College = mongoose.model("College", CollegeSchema);
-
-// 3. REVIEW SCHEMA
-const ReviewSchema = new mongoose.Schema({
-  collegeId: String,
-  rating: Number,
-  course: String,
-  year: String,
-  text: String
-});
-const Review = mongoose.model("Review", ReviewSchema);
-
-// --- ROUTES ---
-
-app.get("/", (req, res) => res.send("College API is Running!"));
-
-// Get all colleges
-app.get("/colleges", async (req, res) => {
-  const colleges = await College.find();
-  res.json(colleges);
-});
-
-// Add a single college
-app.post("/add-college", async (req, res) => {
-  const college = new College(req.body);
-  await college.save();
-  res.json({ message: "College added" });
-});
-
-// Submit a review
-app.post("/review", async (req, res) => {
-  const { collegeId, rating, course, year, text } = req.body;
-  const review = new Review({ collegeId, rating, course, year, text });
-  await review.save();
-
-  const college = await College.findById(collegeId);
-  college.totalReviews += 1;
-  const starMap = { 1: "one", 2: "two", 3: "three", 4: "four", 5: "five" };
-  college.stars[starMap[rating]] += 1;
-  await college.save();
-  res.json({ message: "Review added" });
-});
-
-// --- THE "MAGIC" IMPORT ROUTE ---
-// Visit YOUR_URL/import-now in your browser to fill your database!
-app.get("/import-now", async (req, res) => {
-  try {
-    const response = await axios.get("https://raw.githubusercontent.com/Hipo/university-domains-list/master/world_universities_and_domains.json");
-    const indianColleges = response.data.filter(c => c.country === "India").slice(0, 100); // Takes first 100 for speed
-
-    for (let c of indianColleges) {
-      await College.create({
-        name: c.name,
-        city: "India",
-        website: c.web_pages[0]
-      });
-    }
-    res.send(`Successfully imported ${indianColleges.length} colleges!`);
-  } catch (err) {
-    res.status(500).send("Error: " + err.message);
-  }
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Server active"));
-
+app.listen(PORT, () => console.log(`🚀 Server is running on port ${PORT}`));
