@@ -1,25 +1,23 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
-
+const axios = require("axios"); // Added for the import feature
 const app = express();
+
 app.use(cors());
 app.use(express.json());
 
-// MongoDB connection
+// 1. CONNECTION (Uses the variable you set in Render)
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB Connected"))
-  .catch(err => console.log(err));
+  .then(() => console.log("✅ MongoDB Connected"))
+  .catch(err => console.log("❌ Connection Error:", err));
 
-// College schema
-const collegeSchema = new mongoose.Schema({
+// 2. COLLEGE SCHEMA
+const CollegeSchema = new mongoose.Schema({
   name: String,
   city: String,
-  state: String,
-  totalReviews: {
-    type: Number,
-    default: 0
-  },
+  website: String,
+  totalReviews: { type: Number, default: 0 },
   stars: {
     one: { type: Number, default: 0 },
     two: { type: Number, default: 0 },
@@ -28,26 +26,21 @@ const collegeSchema = new mongoose.Schema({
     five: { type: Number, default: 0 }
   }
 });
+const College = mongoose.model("College", CollegeSchema);
 
-
-// Review schema
+// 3. REVIEW SCHEMA
 const ReviewSchema = new mongoose.Schema({
   collegeId: String,
   rating: Number,
   course: String,
   year: String,
-  text: String,
-  createdAt: { type: Date, default: Date.now }
+  text: String
 });
-
 const Review = mongoose.model("Review", ReviewSchema);
 
-// Add college (one-time use)
-app.post("/add-college", async (req, res) => {
-  const college = new College(req.body);
-  await college.save();
-  res.json({ message: "College added" });
-});
+// --- ROUTES ---
+
+app.get("/", (req, res) => res.send("College API is Running!"));
 
 // Get all colleges
 app.get("/colleges", async (req, res) => {
@@ -55,82 +48,46 @@ app.get("/colleges", async (req, res) => {
   res.json(colleges);
 });
 
-// Get single college + reviews
-app.get("/college/:id", async (req, res) => {
-  const college = await College.findById(req.params.id);
-  const reviews = await Review.find({ collegeId: req.params.id });
-  res.json({ college, reviews });
+// Add a single college
+app.post("/add-college", async (req, res) => {
+  const college = new College(req.body);
+  await college.save();
+  res.json({ message: "College added" });
 });
 
-// Submit review
+// Submit a review
 app.post("/review", async (req, res) => {
   const { collegeId, rating, course, year, text } = req.body;
-
   const review = new Review({ collegeId, rating, course, year, text });
   await review.save();
 
   const college = await College.findById(collegeId);
   college.totalReviews += 1;
-
-  if (rating === 1) college.stars.one++;
-  if (rating === 2) college.stars.two++;
-  if (rating === 3) college.stars.three++;
-  if (rating === 4) college.stars.four++;
-  if (rating === 5) college.stars.five++;
-
+  const starMap = { 1: "one", 2: "two", 3: "three", 4: "four", 5: "five" };
+  college.stars[starMap[rating]] += 1;
   await college.save();
   res.json({ message: "Review added" });
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Server running"));
-
-// Api
-import fetch from "node-fetch"; // add at top if not present
-
-app.get("/import-colleges", async (req, res) => {
-  let page = Number(req.query.page || 1);
-  let limit = 100;
-
-  const apiUrl = `https://colleges-api.onrender.com/colleges?limit=${limit}&page=${page}`;
-
+// --- THE "MAGIC" IMPORT ROUTE ---
+// Visit YOUR_URL/import-now in your browser to fill your database!
+app.get("/import-now", async (req, res) => {
   try {
-    const response = await fetch(apiUrl);
-    const data = await response.json();
+    const response = await axios.get("https://raw.githubusercontent.com/Hipo/university-domains-list/master/world_universities_and_domains.json");
+    const indianColleges = response.data.filter(c => c.country === "India").slice(0, 100); // Takes first 100 for speed
 
-    let added = 0;
-
-    for (let c of data.colleges) {
-      const exists = await College.findOne({ name: c.Name });
-      if (!exists) {
-        await College.create({
-          name: c.Name,
-          city: c.City || "Unknown",
-          state: c.State || "Unknown"
-        });
-        added++;
-      }
+    for (let c of indianColleges) {
+      await College.create({
+        name: c.name,
+        city: "India",
+        website: c.web_pages[0]
+      });
     }
-
-    res.json({
-      message: "Import completed",
-      page: page,
-      collegesAdded: added
-    });
-
+    res.send(`Successfully imported ${indianColleges.length} colleges!`);
   } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-// BULK ADD COLLEGES (For Final Stage)
-app.post("/bulk-add-colleges", async (req, res) => {
-  try {
-    const colleges = req.body; // Expecting an array of college objects
-    await College.insertMany(colleges);
-    res.json({ message: `${colleges.length} Colleges added successfully!` });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).send("Error: " + err.message);
   }
 });
 
-
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log("Server active"));
