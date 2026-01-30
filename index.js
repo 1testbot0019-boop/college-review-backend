@@ -4,45 +4,35 @@ const cors = require("cors");
 const axios = require("axios");
 const app = express();
 
-app.use(cors()); // This allows your website to talk to your backend
+app.use(cors());
 app.use(express.json());
 
-// Database connection
+// Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB Connected"))
   .catch(err => console.log("❌ DB Error:", err));
 
-// College Model
+// College Data Schema
 const College = mongoose.model("College", new mongoose.Schema({
   name: String,
   city: { type: String, default: "India" },
   website: String
 }));
 
-// 1. Home Route
+// Route 1: Home
 app.get("/", (req, res) => res.send("Backend is Ready!"));
 
-// 2. THE FIX: Route to show all colleges (Fixes your URL error)
+// Route 2: THE ONE YOU ARE TESTING (Fixes "Cannot GET /colleges")
 app.get("/colleges", async (req, res) => {
   try {
-    const allColleges = await College.find();
-    res.json(allColleges);
+    const data = await College.find();
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// 3. Route to get a single college by ID
-app.get("/college/:id", async (req, res) => {
-  try {
-    const college = await College.findById(req.params.id);
-    res.json({ college, reviews: [] }); // Sending empty reviews for now
-  } catch (err) {
-    res.status(404).json({ error: "College not found" });
-  }
-});
-
-// 4. Import Route (Run this once to fill data)
+// Route 3: Import data (Run this first!)
 app.get("/import-now", async (req, res) => {
   try {
     const response = await axios.get("https://raw.githubusercontent.com/Hipo/university-domains-list/master/world_universities_and_domains.json");
@@ -50,10 +40,11 @@ app.get("/import-now", async (req, res) => {
     for (let c of indianColleges) {
       await College.updateOne({ name: c.name }, { name: c.name, city: "India", website: c.web_pages[0] }, { upsert: true });
     }
-    res.send("<h1>Success!</h1><p>Data imported.</p>");
+    res.send("<h1>Success!</h1><p>Data imported. Now check /colleges</p>");
   } catch (err) {
     res.status(500).send("Error: " + err.message);
   }
 });
 
-app.listen(process.env.PORT || 3000);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log("Server Active"));
