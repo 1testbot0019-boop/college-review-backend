@@ -7,61 +7,68 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 1. DB CONNECTION
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB Connected"))
   .catch(err => console.log("❌ DB Error:", err));
 
-// 2. SCHEMA
 const College = mongoose.model("College", new mongoose.Schema({
   name: { type: String, required: true, unique: true },
   city: { type: String, default: "India" },
   state: String,
-  website: String,
+  course: { type: String, default: "B.Tech" },
   rank: { type: Number, default: 999 },
-  fees: { type: String, default: "₹ 2.5L - 5L" },
-  package: { type: String, default: "8.5 LPA" }
+  fees: { type: String, default: "₹ 1.5L - 3L" },
+  package: { type: String, default: "7 LPA" }
 }));
 
-// 3. FIX: Paginated Route for 1 Lakh+ Colleges
+// API for your Web App
 app.get("/colleges", async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = 10;
-    const skip = (page - 1) * limit;
-    
-    // Support for location filtering from sidebar
+    const { page = 1, course, search } = req.query;
     let query = {};
-    if (req.query.location) {
-        query.city = { $regex: req.query.location, $options: "i" };
-    }
+    if (course && course !== "All") query.course = course;
+    if (search) query.name = { $regex: search, $options: "i" };
 
-    const colleges = await College.find(query).sort({ rank: 1 }).skip(skip).limit(limit);
-    const total = await College.countDocuments(query);
-
-    res.json({ colleges, totalPages: Math.ceil(total / limit) });
+    const colleges = await College.find(query)
+      .sort({ rank: 1 })
+      .skip((page - 1) * 15)
+      .limit(15);
+      
+    res.json({ colleges });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// 4. IMPORT DATA (Visit /import-now after deploying)
+// IMPORT DATA FROM GITHUB REPO
 app.get("/import-now", async (req, res) => {
   try {
-    const response = await axios.get("http://universities.hipolabs.com/search?country=India");
-    const ops = response.data.map((c, i) => ({
+    // Getting data from the Clueless-Community repo
+    const url = "https://raw.githubusercontent.com/Clueless-Community/collegeAPI/main/index.json";
+    const response = await axios.get(url);
+    const rawData = response.data; // This is an array of college objects
+
+    const courses = ["B.Tech", "MBA", "MBBS", "BCA", "B.Com", "B.Sc"];
+
+    const ops = rawData.map((c, i) => ({
       updateOne: {
         filter: { name: c.name },
-        update: { $set: { name: c.name, city: c["state-province"] || "India", website: c.web_pages[0], rank: i + 1 }},
+        update: { $set: { 
+            name: c.name, 
+            city: c.city || "India", 
+            state: c.state || "",
+            rank: i + 1,
+            course: courses[Math.floor(Math.random() * courses.length)] // Adding random course for filter
+        }},
         upsert: true
       }
     }));
+
     await College.bulkWrite(ops);
-    res.send("<h1>Success!</h1><p>Data imported.</p>");
+    res.send(`<h1>Success!</h1><p>Imported ${rawData.length} colleges from GitHub API.</p>`);
   } catch (err) {
-    res.status(500).send(err.message);
+    res.status(500).send("Import Failed: " + err.message);
   }
 });
 
-app.get("/", (req, res) => res.send("API is Live"));
 app.listen(process.env.PORT || 3000);
