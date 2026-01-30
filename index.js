@@ -122,5 +122,15 @@ app.get("/import-colleges", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+// BULK ADD COLLEGES (For Final Stage)
+app.post("/bulk-add-colleges", async (req, res) => {
+  try {
+    const colleges = req.body; // Expecting an array of college objects
+    await College.insertMany(colleges);
+    res.json({ message: `${colleges.length} Colleges added successfully!` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 
