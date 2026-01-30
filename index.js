@@ -7,44 +7,78 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Connect to MongoDB
+// 1. DATABASE CONNECTION
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB Connected"))
   .catch(err => console.log("❌ DB Error:", err));
 
-// College Data Schema
-const College = mongoose.model("College", new mongoose.Schema({
-  name: String,
+// 2. COLLEGE SCHEMA (Designed for Scale)
+const collegeSchema = new mongoose.Schema({
+  name: { type: String, required: true, unique: true },
   city: { type: String, default: "India" },
-  website: String
-}));
+  state: String,
+  website: String,
+  rank: { type: Number, default: 999 },
+  fees: { type: String, default: "₹ 1.5L - 4L" },
+  package: { type: String, default: "6.5 LPA" }
+});
 
-// Route 1: Home
-app.get("/", (req, res) => res.send("Backend is Ready!"));
+const College = mongoose.model("College", collegeSchema);
 
-// Route 2: THE ONE YOU ARE TESTING (Fixes "Cannot GET /colleges")
+// 3. PAGINATED API (Fetches 20 colleges at a time)
 app.get("/colleges", async (req, res) => {
   try {
-    const data = await College.find();
-    res.json(data);
+    const page = parseInt(req.query.page) || 1;
+    const limit = 20;
+    const skip = (page - 1) * limit;
+
+    const colleges = await College.find()
+      .sort({ rank: 1 }) 
+      .skip(skip)
+      .limit(limit);
+
+    const total = await College.countDocuments();
+
+    res.json({
+      colleges,
+      totalCount: total,
+      totalPages: Math.ceil(total / limit),
+      currentPage: page
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Route 3: Import data (Run this first!)
+// 4. MASSIVE DATA IMPORT (Pulls thousands of Indian Colleges)
 app.get("/import-now", async (req, res) => {
   try {
-    const response = await axios.get("https://raw.githubusercontent.com/Hipo/university-domains-list/master/world_universities_and_domains.json");
-    const indianColleges = response.data.filter(c => c.country === "India").slice(0, 20);
-    for (let c of indianColleges) {
-      await College.updateOne({ name: c.name }, { name: c.name, city: "India", website: c.web_pages[0] }, { upsert: true });
-    }
-    res.send("<h1>Success!</h1><p>Data imported. Now check /colleges</p>");
+    const response = await axios.get("http://universities.hipolabs.com/search?country=India");
+    const collegesData = response.data;
+
+    const ops = collegesData.map((c, index) => ({
+      updateOne: {
+        filter: { name: c.name },
+        update: { 
+          $set: { 
+            name: c.name, 
+            city: c["state-province"] || "India", 
+            website: c.web_pages[0],
+            rank: index + 1
+          } 
+        },
+        upsert: true
+      }
+    }));
+
+    await College.bulkWrite(ops); // Efficiently saves thousands of records
+    res.send(`<h1>Success!</h1><p>Imported ${collegesData.length} colleges.</p>`);
   } catch (err) {
     res.status(500).send("Error: " + err.message);
   }
 });
 
+app.get("/", (req, res) => res.send("College API is Live"));
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Server Active"));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
