@@ -12,20 +12,23 @@ mongoose.connect(process.env.MONGO_URI)
   .catch(err => console.log(err));
 
 // College schema
-const CollegeSchema = new mongoose.Schema({
+const collegeSchema = new mongoose.Schema({
   name: String,
   city: String,
-  totalReviews: { type: Number, default: 0 },
+  state: String,
+  totalReviews: {
+    type: Number,
+    default: 0
+  },
   stars: {
     one: { type: Number, default: 0 },
     two: { type: Number, default: 0 },
     three: { type: Number, default: 0 },
     four: { type: Number, default: 0 },
-    five: { type: Number, default: 0 },
+    five: { type: Number, default: 0 }
   }
 });
 
-const College = mongoose.model("College", CollegeSchema);
 
 // Review schema
 const ReviewSchema = new mongoose.Schema({
@@ -119,4 +122,5 @@ app.get("/import-colleges", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 
